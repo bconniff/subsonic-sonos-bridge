@@ -54,12 +54,11 @@ class SonosDevice:
             self.soco.clear_queue()
             self.soco.play_mode = "NORMAL"
 
-            self.queue_track(songs.popleft())
+            results.append(self.queue_track(songs.popleft()))
             self.soco.play_from_queue(0)
 
             for song in songs:
-                result = self.queue_track(song)
-                results.append(result)
+                results.append(self.queue_track(song))
 
         return results
 

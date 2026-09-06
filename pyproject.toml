@@ -9,6 +9,7 @@ description = "Bridge between Subsonic API and Sonos"
 requires-python = ">=3.10"
 dependencies = [
     "fastapi>=0.115",
+    "starlette>=0.38",
     "uvicorn[standard]>=0.30",
     "soco>=0.30",
     "py-opensonic>=10.3.0",

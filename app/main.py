@@ -23,8 +23,8 @@ app = FastAPI(title="subsonic-sonos-bridge", lifespan=lifespan)
 PROXY_HEADERS = (
     "content-range",
     "content-length",
-    "accept-ranges"
-    "cache-control"
+    "accept-ranges",
+    "cache-control",
 )
 
 def proxy_headers(headers, keep_headers=PROXY_HEADERS):
@@ -37,7 +37,7 @@ def stream_response(res: ClientResponse) -> StreamingResponse:
     async def body():
         async for chunk in res.content:
             yield chunk
-        res.release()
+        await res.release()
 
     return StreamingResponse(
         body(),
@@ -79,7 +79,7 @@ async def get_art(id: str, subsonic: DependSubsonicAPI):
 @app.post("/play")
 async def play(req: PlayRequest, subsonic: DependSubsonicAPI, sonos: DependSonosConnection):
     album_async = subsonic.get_album(req.album_id)
-    device = sonos.get_device(req.sonos_name)
+    device = await run_in_threadpool(sonos.get_device, req.sonos_name)
     album = await album_async
 
     if device is None:

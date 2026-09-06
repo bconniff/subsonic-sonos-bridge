@@ -10,7 +10,7 @@ class SearchRequest(BaseModel):
         return (
             (self.year is None or self.year == it.year) and
             (self.artist is None or self.artist == it.artist) and
-            (self.album is None or req.artist == it.artist)
+            (self.album is None or self.artist == it.artist)
         )
 
 class TrackIn(BaseModel):
