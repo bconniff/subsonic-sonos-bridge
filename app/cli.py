@@ -1,7 +1,5 @@
 import argparse
-
 import uvicorn
-
 
 def main():
     parser = argparse.ArgumentParser(prog="navidrome-sonos-bridge")
@@ -11,7 +9,6 @@ def main():
     args = parser.parse_args()
 
     uvicorn.run("app.main:app", host=args.host, port=args.port, reload=args.reload)
-
 
 if __name__ == "__main__":
     main()

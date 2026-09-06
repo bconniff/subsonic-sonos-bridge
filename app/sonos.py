@@ -1,8 +1,15 @@
 import os
 import re
+import time
 
+from collections import deque
 from soco import SoCo, discovery
 from soco.data_structures import DidlMusicTrack, DidlResource
+
+def format_duration(seconds: int) -> str:
+    h, remainder = divmod(seconds, 3600)
+    m, s = divmod(remainder, 60)
+    return f"{h}:{m:02d}:{s:02d}"
 
 class SonosDevice:
     def __init__(self, name):
@@ -20,7 +27,7 @@ class SonosDevice:
         self.ip = self.soco.ip_address
 
     def queue_track(self, song):
-        track = DidlMusicTrack(
+        track_didl = DidlMusicTrack(
             title = song.title,
             parent_id = song.parent,
             item_id = song.id,
@@ -31,15 +38,29 @@ class SonosDevice:
                 DidlResource(
                     uri = f"{self.bridge_url}/song/{song.id}",
                     protocol_info = f"http-get:*:{song.content_type}:*",
+                    duration = format_duration(song.duration),
                 )
             ],
         )
-        return track
+        self.soco.add_to_queue(track_didl)
+        return track_didl
 
     def queue_album(self, album):
         results = []
-        for s in album.song:
-            results.append(self.queue_track(s))
+
+        if album.song:
+            songs = deque(album.song)
+
+            self.soco.clear_queue()
+            self.soco.play_mode = "NORMAL"
+
+            self.queue_track(songs.popleft())
+            self.soco.play_from_queue(0)
+
+            for song in songs:
+                result = self.queue_track(song)
+                results.append(result)
+
         return results
 
 class SonosConnection:
@@ -60,5 +81,5 @@ class SonosConnection:
 
         return device
 
-    def close(self):
+    async def close(self):
         pass
