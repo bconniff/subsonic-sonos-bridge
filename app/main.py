@@ -1,5 +1,6 @@
 import logging
 
+from starlette.concurrency import run_in_threadpool
 from aiohttp import ClientResponse
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import StreamingResponse
@@ -84,4 +85,4 @@ async def play(req: PlayRequest, subsonic: DependSubsonicAPI, sonos: DependSonos
     if device is None:
         return None
 
-    return device.queue_album(album)
+    return await run_in_threadpool(device.queue_album, album)
