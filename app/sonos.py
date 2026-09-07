@@ -1,10 +1,16 @@
+import logging
 import os
 import re
 import time
 
 from collections import deque
 from soco import SoCo, discovery
-from soco.data_structures import DidlMusicTrack, DidlResource
+from soco.data_structures import DidlMusicTrack, DidlResource, to_didl_string
+
+logger = logging.getLogger(__name__)
+
+# determines how many songs we queue before sending the "play queue" request
+FIRST_BATCH_SIZE = 16
 
 def format_duration(seconds: int) -> str:
     h, remainder = divmod(seconds, 3600)
@@ -26,41 +32,67 @@ class SonosDevice:
         self.name = self.soco.player_name
         self.ip = self.soco.ip_address
 
-    def queue_track(self, song):
-        track_didl = DidlMusicTrack(
-            title = song.title,
-            parent_id = song.parent,
-            item_id = song.id,
-            creator = song.artist or "",
-            album = song.album or "",
-            album_art_uri = f"{self.bridge_url}/art/{song.cover_art}",
-            resources = [
-                DidlResource(
-                    uri = f"{self.bridge_url}/song/{song.id}",
-                    protocol_info = f"http-get:*:{song.content_type}:*",
-                    duration = format_duration(song.duration),
-                )
-            ],
-        )
-        self.soco.add_to_queue(track_didl)
-        return track_didl
+    def to_track_didls(self, songs):
+        return [
+            DidlMusicTrack(
+                title = song.title,
+                parent_id = "0",
+                item_id = song.id,
+                creator = song.artist or "",
+                album = song.album or "",
+                album_art_uri = f"{self.bridge_url}/art/{song.cover_art}",
+                original_track_number = song.track,
+                resources = [
+                    DidlResource(
+                        uri = f"{self.bridge_url}/song/{song.id}/stream",
+                        protocol_info = f"http-get:*:{song.content_type}:*",
+                        duration = format_duration(song.duration),
+                    )
+                ],
+            )
+            for song in songs
+        ]
 
-    def queue_album(self, album):
+    def queue_songs(self, songs):
+        results = self.to_track_didls(songs)
+        self.soco.add_multiple_to_queue(results)
+        return results
+
+    def play_songs(self, songs, mode = 'NORMAL'):
         results = []
 
-        if album.song:
-            songs = deque(album.song)
-
+        if songs:
             self.soco.clear_queue()
-            self.soco.play_mode = "NORMAL"
+            self.soco.play_mode = mode
 
-            results.append(self.queue_track(songs.popleft()))
+            head = songs[:FIRST_BATCH_SIZE]
+            tail = songs[FIRST_BATCH_SIZE:]
+
+            results.extend(self.queue_songs(head))
             self.soco.play_from_queue(0)
-
-            for song in songs:
-                results.append(self.queue_track(song))
+            if tail:
+                results.extend(self.queue_songs(tail))
 
         return results
+
+    def get_queue(self):
+        return self.soco.get_queue()
+
+    def get_info(self):
+        return {
+            'ip': self.ip,
+            'name': self.name,
+            'is_coordinator': self.soco.is_coordinator,
+            'play_mode': self.soco.play_mode,
+            'available_actions': self.soco.available_actions,
+            'music_source': self.soco.music_source,
+            'group_coordinator': self.soco.group.coordinator.player_name,
+            'track': self.soco.get_current_track_info(),
+            'media': self.soco.get_current_media_info(),
+            'speaker': self.soco.get_speaker_info(),
+            'tx': self.soco.get_current_transport_info(),
+            'queue_size': self.soco.queue_size,
+        }
 
 class SonosConnection:
     devices = {}

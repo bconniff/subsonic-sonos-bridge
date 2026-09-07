@@ -16,18 +16,28 @@ from .models import PlayRequest, SearchRequest
 from .sonos import SonosConnection
 
 logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger("subsonic-sonos-bridge")
+
+logger = logging.getLogger(__name__)
 
 app = FastAPI(title="subsonic-sonos-bridge", lifespan=lifespan)
 
-PROXY_HEADERS = (
+PROXY_REQUEST_HEADERS = {
+    "range",
+    "if-none-match",
+    "if-modified-since",
+}
+
+PROXY_RESPONSE_HEADERS = {
     "content-range",
     "content-length",
     "accept-ranges",
     "cache-control",
-)
+    "etag",
+    "last-modified",
+    "expires",
+}
 
-def proxy_headers(headers, keep_headers=PROXY_HEADERS):
+def proxy_headers(headers, keep_headers=PROXY_RESPONSE_HEADERS):
     return {
         k: v for k, v in headers.items()
         if k.lower() in keep_headers
@@ -52,37 +62,71 @@ def health():
 
 @app.post("/search")
 async def search(req: SearchRequest, subsonic: DependSubsonicAPI):
-    albums = (await subsonic.find_albums(req.query)) or []
-    return [
-        a for a in albums
-        if req.matches(a)
-    ]
+    albums = await subsonic.find_albums(req.query)
+    return [ a for a in albums if req.matches(a) ]
 
 @app.get("/album/{id}")
 async def get_album(id: str, subsonic: DependSubsonicAPI):
-    return await subsonic.get_album(id);
+    album = await subsonic.get_album(id);
+    if not album:
+        raise HTTPException(status_code = 404, detail = 'Album not found')
+    return album
 
 @app.get("/song/{id}")
-async def get_stream(id: str, req: Request, subsonic: DependSubsonicAPI, http: DependHttpSession):
+async def get_song(id: str, subsonic: DependSubsonicAPI):
+    song = await subsonic.get_song(id);
+    if not song:
+        raise HTTPException(status_code = 404, detail = 'Song not found')
+    return song
+
+@app.get("/song/{id}/stream")
+async def get_song_stream(id: str, req: Request, subsonic: DependSubsonicAPI, http: DependHttpSession):
     url, params = subsonic.get_stream_url(id)
 
     return stream_response(await http.get(
         url,
         params = params,
-        headers = proxy_headers(req.headers, ("ranges"))
+        headers = proxy_headers(req.headers, PROXY_REQUEST_HEADERS)
     ))
+
+@app.get("/playlist")
+async def get_playlists(subsonic: DependSubsonicAPI):
+    return await subsonic.find_playlists()
+
+@app.get("/playlist/{id}")
+async def get_playlist(id: str, subsonic: DependSubsonicAPI):
+    playlist = await subsonic.get_playlist(id)
+    if not playlist:
+        raise HTTPException(status_code = 404, detail = 'Playlist not found')
+    return playlist
 
 @app.get("/art/{id}")
 async def get_art(id: str, subsonic: DependSubsonicAPI):
     return stream_response(await subsonic.get_art(id))
 
-@app.post("/play")
-async def play(req: PlayRequest, subsonic: DependSubsonicAPI, sonos: DependSonosConnection):
-    album_async = subsonic.get_album(req.album_id)
-    device = await run_in_threadpool(sonos.get_device, req.sonos_name)
-    album = await album_async
+@app.get("/sonos/{sonos_name}")
+async def get_sonos_info(sonos_name: str, sonos: DependSonosConnection):
+    device = await run_in_threadpool(sonos.get_device, sonos_name)
+    if not device:
+        raise HTTPException(status_code = 404, detail = 'Device not found')
+    return await run_in_threadpool(device.get_info)
 
-    if device is None:
-        return None
+@app.get("/sonos/{sonos_name}/queue")
+async def get_sonos_queue(sonos_name: str, sonos: DependSonosConnection):
+    device = await run_in_threadpool(sonos.get_device, sonos_name)
+    if not device:
+        raise HTTPException(status_code = 404, detail = 'Device not found')
+    return await run_in_threadpool(device.get_queue)
 
-    return await run_in_threadpool(device.queue_album, album)
+@app.post("/sonos/{sonos_name}/play")
+async def play(sonos_name: str, req: PlayRequest, subsonic: DependSubsonicAPI, sonos: DependSonosConnection):
+    songs_async = subsonic.resolve_songs(req)
+    device = await run_in_threadpool(sonos.get_device, sonos_name)
+    songs = await songs_async
+
+    if not device:
+        raise HTTPException(status_code = 404, detail = 'Device not found')
+    if not songs:
+        raise HTTPException(status_code = 404, detail = 'Songs not found')
+
+    return await run_in_threadpool(device.play_songs, songs, req.mode)

@@ -23,5 +23,6 @@ class TrackIn(BaseModel):
 
 
 class PlayRequest(BaseModel):
-    sonos_name: str
-    album_id: str
+    album_id: str | None = None
+    playlist_id: str | None = None
+    mode: str = "NORMAL"
