@@ -53,25 +53,24 @@ class SonosDevice:
             for song in songs
         ]
 
-    def queue_songs(self, songs):
-        results = self.to_track_didls(songs)
-        self.soco.add_multiple_to_queue(results)
-        return results
-
     def play_songs(self, songs, mode = 'NORMAL'):
         results = []
 
         if songs:
-            self.soco.clear_queue()
-            self.soco.play_mode = mode
+            coordinator = self.soco if self.soco.is_coordinator else self.soco.group.coordinator
 
-            head = songs[:FIRST_BATCH_SIZE]
-            tail = songs[FIRST_BATCH_SIZE:]
+            results = self.to_track_didls(songs)
 
-            results.extend(self.queue_songs(head))
-            self.soco.play_from_queue(0)
+            coordinator.clear_queue()
+            coordinator.play_mode = mode
+
+            head = results[:FIRST_BATCH_SIZE]
+            tail = results[FIRST_BATCH_SIZE:]
+
+            coordinator.add_multiple_to_queue(head)
+            coordinator.play_from_queue(0)
             if tail:
-                results.extend(self.queue_songs(tail))
+                coordinator.add_multiple_to_queue(tail)
 
         return results
 
@@ -79,12 +78,13 @@ class SonosDevice:
         return self.soco.get_queue()
 
     def get_info(self):
+        coordinator = self.soco if self.soco.is_coordinator else self.soco.group.coordinator
         return {
             'ip': self.ip,
             'name': self.name,
             'is_coordinator': self.soco.is_coordinator,
             'play_mode': self.soco.play_mode,
-            'available_actions': self.soco.available_actions,
+            'available_actions': coordinator.available_actions,
             'music_source': self.soco.music_source,
             'group_coordinator': self.soco.group.coordinator.player_name,
             'track': self.soco.get_current_track_info(),
