@@ -7,6 +7,8 @@ from collections import deque
 from soco import SoCo, discovery
 from soco.data_structures import DidlMusicTrack, DidlResource, to_didl_string
 
+from .models import PlayRequestMode
+
 logger = logging.getLogger(__name__)
 
 # determines how many songs we queue before sending the "play queue" request
@@ -53,7 +55,7 @@ class SonosDevice:
             for song in songs
         ]
 
-    def play_songs(self, songs, mode = 'NORMAL'):
+    def play_songs(self, songs, mode = PlayRequestMode.NORMAL):
         results = []
 
         if songs:
@@ -62,7 +64,7 @@ class SonosDevice:
             results = self.to_track_didls(songs)
 
             coordinator.clear_queue()
-            coordinator.play_mode = mode
+            coordinator.play_mode = mode.value
 
             head = results[:FIRST_BATCH_SIZE]
             tail = results[FIRST_BATCH_SIZE:]

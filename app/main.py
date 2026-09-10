@@ -62,8 +62,7 @@ def health():
 
 @app.post("/search")
 async def search(req: SearchRequest, subsonic: DependSubsonicAPI):
-    albums = await subsonic.find_albums(req.query)
-    return [ a for a in albums if req.matches(a) ]
+    return await subsonic.search(req)
 
 @app.get("/album/{id}")
 async def get_album(id: str, subsonic: DependSubsonicAPI):
