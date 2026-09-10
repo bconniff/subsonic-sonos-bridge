@@ -1,13 +1,13 @@
 import os
 import logging
 
+from itertools import chain
 from asyncio import gather, Semaphore
 
 from libopensonic import AsyncConnection
 from libopensonic.errors import DataNotFoundError
 
 from .models import (
-    PlayRequest,
     SearchRequest,
     SearchRequestKind,
     AlbumInfo,
@@ -66,6 +66,8 @@ def _to_song_info(it):
         album_id = it.parent,
         album = it.album,
         artist = it.artist,
+        content_type = it.content_type,
+        duration = it.duration,
         year = it.year,
         genres = [ genre.name for genre in it.genres ],
         cover_art = it.cover_art,
@@ -90,21 +92,13 @@ class SubsonicAPI:
         )
         self.semaphore = Semaphore(CONCURRENCY_LIMIT)
 
-    async def close(self):
-        await self.conn.cleanup()
-
-    async def find_playlists(self):
-        return await self.conn.get_playlists()
-
     async def _search_songs_by_query(self, req: SearchRequest) -> list[SongInfo]:
-        query = req.build_song_query()
-
-        logger.info('searching songs with search3')
+        logger.info('searching songs with search3 '+req.build_query())
 
         return [
             song async for song in paginate(
                 lambda limit, offset: self.conn.search3(
-                    query = query,
+                    query = req.build_query(),
                     album_count = 0,
                     artist_count = 0,
                     song_count = limit,
@@ -112,18 +106,16 @@ class SubsonicAPI:
                 ),
                 lambda res: [ _to_song_info(it) for it in (res.song or []) ],
             )
-            if req.match_song(song)
+            if song.matches(req)
         ]
 
     async def _search_albums_by_query(self, req: SearchRequest) -> list[AlbumInfo]:
-        query = req.build_album_query()
-
         logger.info('searching albums with search3')
 
         return [
             album async for album in paginate(
                 lambda limit, offset: self.conn.search3(
-                    query = query,
+                    query = req.build_query(),
                     album_count = limit,
                     artist_count = 0,
                     song_count = 0,
@@ -131,16 +123,30 @@ class SubsonicAPI:
                 ),
                 lambda res: [ _to_album_info(it) for it in (res.album or []) ],
             )
-            if req.match_album(album)
+            if album.matches(req)
         ]
 
     async def _get_playlist_limited(self, id):
         async with self.semaphore:
-            return await self.conn.get_playlist(id)
+            result = await self.conn.get_playlist(id)
+            return [ _to_song_info(it) for it in result.entry ]
 
     async def _get_album_limited(self, id):
         async with self.semaphore:
-            return await self.conn.get_album(id)
+            result = await self.conn.get_album(id)
+            return [ _to_song_info(it) for it in result.song ]
+
+    async def _get_playlists(self, playlists: list[PlaylistInfo]) -> list[SongInfo]:
+        return list(chain.from_iterable(await gather(*(
+            self._get_playlist_limited(p.playlist_id)
+            for p in playlists
+        ))))
+
+    async def _get_albums(self, albums: list[AlbumInfo]) -> list[SongInfo]:
+        return list(chain.from_iterable(await gather(*(
+            self._get_album_limited(a.album_id)
+            for a in albums
+        ))))
 
     async def _search_songs_by_playlist(self, req: SearchRequest) -> list[SongInfo]:
         logger.info('searching songs by playlist')
@@ -149,15 +155,8 @@ class SubsonicAPI:
             playlist = req.playlist,
             kind = SearchRequestKind.PLAYLIST
         ))
-
-        results = await gather(*(
-            self._get_playlist_limited(p.playlist_id)
-            for p in playlists
-        ))
-
-        songs = [ _to_song_info(it) for result in results for it in result.entry ]
-
-        return [ song for song in songs if req.match_song(song) ]
+        songs = await self._get_playlists(playlists)
+        return [ song for song in songs if song.matches(req) ]
 
     async def _search_albums_by_year(self, req: SearchRequest) -> list[AlbumInfo]:
         logger.info('searching albums by year')
@@ -174,7 +173,7 @@ class SubsonicAPI:
                 lambda res: [ _to_album_info(it) for it in res ],
                 limit = ALBUMS_LIMIT,
             )
-            if req.match_album(album)
+            if album.matches(req)
         ]
 
     async def _search_albums_by_genre(self, req: SearchRequest) -> list[AlbumInfo]:
@@ -191,22 +190,14 @@ class SubsonicAPI:
                 lambda res: [ _to_album_info(it) for it in res ],
                 limit = ALBUMS_LIMIT,
             )
-            if req.match_album(album)
+            if album.matches(req)
         ]
 
     async def _search_songs_by_album(self, album_provider_fn, req: SearchRequest) -> list[SongInfo]:
         albums = await album_provider_fn(req)
-
         logger.info('searching songs by album')
-
-        results = await gather(*(
-            self._get_album_limited(album.album_id)
-            for album in albums
-        ))
-
-        songs = [ _to_song_info(it) for result in results for it in result.song ]
-
-        return [ song for song in songs if req.match_song(song) ]
+        songs = await self._get_albums(albums)
+        return [ song for song in songs if song.matches(req) ]
 
     async def _search_songs_by_year(self, req: SearchRequest) -> list[SongInfo]:
         return await self._search_songs_by_album(self._search_albums_by_year, req)
@@ -214,10 +205,15 @@ class SubsonicAPI:
     async def _search_songs_by_genre(self, req: SearchRequest) -> list[SongInfo]:
         return await self._search_songs_by_album(self._search_albums_by_genre, req)
 
-    async def search_songs(self, req: SearchRequest) -> list[SongInfo]:
+    async def _search_playlists_by_query(self, req: SearchRequest) -> list[PlaylistInfo]:
+        result = await self.conn.get_playlists()
+        playlists = [ _to_playlist_info(it) for it in (result or []) ]
+        return [ it for it in playlists if it.matches(req) ]
+
+    async def _search_songs(self, req: SearchRequest) -> list[SongInfo]:
         if req.playlist:
             return await self._search_songs_by_playlist(req)
-        if req.build_song_query():
+        if req.build_query():
             return await self._search_songs_by_query(req)
         if req.year:
             return await self._search_songs_by_year(req)
@@ -226,8 +222,8 @@ class SubsonicAPI:
         return []
 
 
-    async def search_albums(self, req: SearchRequest) -> list[AlbumInfo]:
-        if req.build_album_query():
+    async def _search_albums(self, req: SearchRequest) -> list[AlbumInfo]:
+        if req.build_query():
             return await self._search_albums_by_query(req)
         if req.year:
             return await self._search_albums_by_year(req)
@@ -235,51 +231,38 @@ class SubsonicAPI:
             return await self._search_albums_by_genre(req)
         return []
 
-    async def search_playlists(self, req: SearchRequest) -> list[PlaylistInfo]:
-        result = await self.conn.get_playlists()
-        playlists = [ _to_playlist_info(it) for it in (result or []) ]
-        return [ it for it in playlists if req.match_playlist(it) ]
+    async def _search_playlists(self, req: SearchRequest) -> list[PlaylistInfo]:
+        if req.build_query():
+            return await self._search_playlists_by_query(req)
+        return []
 
     async def search(self, req: SearchRequest):
         match req.kind:
             case SearchRequestKind.SONG:
-                return await self.search_songs(req)
+                return await self._search_songs(req)
             case SearchRequestKind.ALBUM:
-                return await self.search_albums(req)
+                return await self._search_albums(req)
             case SearchRequestKind.PLAYLIST:
-                return await self.search_playlists(req)
+                return await self._search_playlists(req)
         return []
 
-    async def _get_or_none(self, coro):
-        try:
-            return await coro
-        except DataNotFoundError:
-            return None
-
-    async def get_playlist(self, id):
-        return await self._get_or_none(self.conn.get_playlist(id))
-
-    async def get_song(self, id):
-        return await self._get_or_none(self.conn.get_song(id))
-
-    async def get_album(self, id):
-        return await self._get_or_none(self.conn.get_album(id))
-
-    async def get_art(self, id):
-        return await self._get_or_none(self.conn.get_cover_art(id))
-
-    async def resolve_songs(self, req: PlayRequest):
+    async def resolve_songs(self, req: SearchRequest) -> list[SongInfo]:
         songs = []
-
-        if req.album_id:
-            album = await self.get_album(req.album_id)
-            songs.extend(album.song if album else [])
-
-        if req.playlist_id:
-            playlist = await self.get_playlist(req.playlist_id)
-            songs.extend(playlist.entry if playlist else [])
-
+        results = await self.search(req)
+        match req.kind:
+            case SearchRequestKind.SONG:
+                songs.extend(results)
+            case SearchRequestKind.ALBUM:
+                songs.extend(await self._get_albums(results))
+            case SearchRequestKind.PLAYLIST:
+                songs.extend(await self._get_playlists(results))
         return songs
 
     def get_stream_url(self, id):
         return self.conn.get_stream_url(id)
+
+    async def get_art(self, id):
+        return await self.conn.get_cover_art(id)
+
+    async def close(self):
+        await self.conn.cleanup()

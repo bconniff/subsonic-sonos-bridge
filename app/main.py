@@ -64,21 +64,7 @@ def health():
 async def search(req: SearchRequest, subsonic: DependSubsonicAPI):
     return await subsonic.search(req)
 
-@app.get("/album/{id}")
-async def get_album(id: str, subsonic: DependSubsonicAPI):
-    album = await subsonic.get_album(id);
-    if not album:
-        raise HTTPException(status_code = 404, detail = 'Album not found')
-    return album
-
-@app.get("/song/{id}")
-async def get_song(id: str, subsonic: DependSubsonicAPI):
-    song = await subsonic.get_song(id);
-    if not song:
-        raise HTTPException(status_code = 404, detail = 'Song not found')
-    return song
-
-@app.get("/song/{id}/stream")
+@app.get("/stream/{id}")
 async def get_song_stream(id: str, req: Request, subsonic: DependSubsonicAPI, http: DependHttpSession):
     url, params = subsonic.get_stream_url(id)
 
@@ -87,17 +73,6 @@ async def get_song_stream(id: str, req: Request, subsonic: DependSubsonicAPI, ht
         params = params,
         headers = proxy_headers(req.headers, PROXY_REQUEST_HEADERS)
     ))
-
-@app.get("/playlist")
-async def get_playlists(subsonic: DependSubsonicAPI):
-    return await subsonic.find_playlists()
-
-@app.get("/playlist/{id}")
-async def get_playlist(id: str, subsonic: DependSubsonicAPI):
-    playlist = await subsonic.get_playlist(id)
-    if not playlist:
-        raise HTTPException(status_code = 404, detail = 'Playlist not found')
-    return playlist
 
 @app.get("/art/{id}")
 async def get_art(id: str, subsonic: DependSubsonicAPI):

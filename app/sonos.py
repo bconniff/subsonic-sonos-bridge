@@ -7,7 +7,7 @@ from collections import deque
 from soco import SoCo, discovery
 from soco.data_structures import DidlMusicTrack, DidlResource, to_didl_string
 
-from .models import PlayRequestMode
+from .models import PlayRequestMode, SongInfo
 
 logger = logging.getLogger(__name__)
 
@@ -34,19 +34,19 @@ class SonosDevice:
         self.name = self.soco.player_name
         self.ip = self.soco.ip_address
 
-    def to_track_didls(self, songs):
+    def to_track_didls(self, songs: list[SongInfo]):
         return [
             DidlMusicTrack(
                 title = song.title,
                 parent_id = "0",
-                item_id = song.id,
+                item_id = song.song_id,
                 creator = song.artist or "",
                 album = song.album or "",
                 album_art_uri = f"{self.bridge_url}/art/{song.cover_art}",
                 original_track_number = song.track,
                 resources = [
                     DidlResource(
-                        uri = f"{self.bridge_url}/song/{song.id}/stream",
+                        uri = f"{self.bridge_url}/stream/{song.song_id}",
                         protocol_info = f"http-get:*:{song.content_type}:*",
                         duration = format_duration(song.duration),
                     )
@@ -56,12 +56,10 @@ class SonosDevice:
         ]
 
     def play_songs(self, songs, mode = PlayRequestMode.NORMAL):
-        results = []
+        results = self.to_track_didls(songs)
 
         if songs:
             coordinator = self.soco if self.soco.is_coordinator else self.soco.group.coordinator
-
-            results = self.to_track_didls(songs)
 
             coordinator.clear_queue()
             coordinator.play_mode = mode.value
