@@ -45,11 +45,14 @@ class PlayRequestMode(str, Enum):
 class SearchRequest(BaseModel):
     query: str | None = None
     album: str | None = None
+    album_id: str| None = None
     artist: str | None = None
     title: str | None = None
     year: int | None = None
     genre: str| None = None
     playlist: str | None = None
+    playlist_id: str | None = None
+    starred: bool | None = None
     kind: SearchRequestKind = SearchRequestKind.ALBUM
 
     def build_query(self) -> str:
@@ -89,6 +92,7 @@ class AlbumInfo(BaseModel, Matchable):
     genres: list[str]
     year: int | None
     cover_art: str | None
+    starred: str | None
 
     def search_string(self) -> str:
         return _build_query(
@@ -102,6 +106,8 @@ class AlbumInfo(BaseModel, Matchable):
             _match_exact(req.year, self.year) and
             _match_eq(req.artist, self.artist) and
             _match_eq(req.album, self.album) and
+            _match_exact(req.album_id, self.album_id) and
+            _match_exact(req.starred, bool(self.starred)) and
             _match_in(req.genre, self.genres)
         )
 
@@ -136,6 +142,7 @@ class PlaylistInfo(BaseModel, Matchable):
     def matches(self, req: SearchRequest) -> bool:
         return (
             _match_fuzzy(req.build_query(), self.search_string()) and
-            _match_eq(req.playlist, self.playlist)
+            _match_eq(req.playlist, self.playlist) and
+            _match_exact(req.playlist_id, self.playlist_id)
         )
 

@@ -37,13 +37,13 @@ PROXY_RESPONSE_HEADERS = {
     "expires",
 }
 
-def proxy_headers(headers, keep_headers=PROXY_RESPONSE_HEADERS):
+def _proxy_headers(headers, keep_headers=PROXY_RESPONSE_HEADERS):
     return {
         k: v for k, v in headers.items()
         if k.lower() in keep_headers
     }
 
-def stream_response(res: ClientResponse) -> StreamingResponse:
+def _stream_response(res: ClientResponse) -> StreamingResponse:
     async def body():
         async for chunk in res.content:
             yield chunk
@@ -53,7 +53,7 @@ def stream_response(res: ClientResponse) -> StreamingResponse:
         body(),
         status_code = res.status,
         media_type = res.headers.get("content-type"),
-        headers = proxy_headers(res.headers),
+        headers = _proxy_headers(res.headers),
     )
 
 @app.get("/health")
@@ -68,15 +68,15 @@ async def search(req: SearchRequest, subsonic: DependSubsonicAPI):
 async def get_song_stream(id: str, req: Request, subsonic: DependSubsonicAPI, http: DependHttpSession):
     url, params = subsonic.get_stream_url(id)
 
-    return stream_response(await http.get(
+    return _stream_response(await http.get(
         url,
         params = params,
-        headers = proxy_headers(req.headers, PROXY_REQUEST_HEADERS)
+        headers = _proxy_headers(req.headers, PROXY_REQUEST_HEADERS)
     ))
 
 @app.get("/art/{id}")
 async def get_art(id: str, subsonic: DependSubsonicAPI):
-    return stream_response(await subsonic.get_art(id))
+    return _stream_response(await subsonic.get_art(id))
 
 @app.get("/sonos/{sonos_name}")
 async def get_sonos_info(sonos_name: str, sonos: DependSonosConnection):

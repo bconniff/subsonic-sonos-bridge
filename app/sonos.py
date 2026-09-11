@@ -3,7 +3,6 @@ import os
 import re
 import time
 
-from collections import deque
 from soco import SoCo, discovery
 from soco.data_structures import DidlMusicTrack, DidlResource, to_didl_string
 
@@ -14,7 +13,7 @@ logger = logging.getLogger(__name__)
 # determines how many songs we queue before sending the "play queue" request
 FIRST_BATCH_SIZE = 16
 
-def format_duration(seconds: int) -> str:
+def _format_duration(seconds: int) -> str:
     h, remainder = divmod(seconds, 3600)
     m, s = divmod(remainder, 60)
     return f"{h}:{m:02d}:{s:02d}"
@@ -34,7 +33,7 @@ class SonosDevice:
         self.name = self.soco.player_name
         self.ip = self.soco.ip_address
 
-    def to_track_didls(self, songs: list[SongInfo]):
+    def _to_track_didls(self, songs: list[SongInfo]):
         return [
             DidlMusicTrack(
                 title = song.title,
@@ -48,7 +47,7 @@ class SonosDevice:
                     DidlResource(
                         uri = f"{self.bridge_url}/stream/{song.song_id}",
                         protocol_info = f"http-get:*:{song.content_type}:*",
-                        duration = format_duration(song.duration),
+                        duration = _format_duration(song.duration),
                     )
                 ],
             )
@@ -56,7 +55,7 @@ class SonosDevice:
         ]
 
     def play_songs(self, songs, mode = PlayRequestMode.NORMAL):
-        results = self.to_track_didls(songs)
+        results = self._to_track_didls(songs)
 
         if songs:
             coordinator = self.soco if self.soco.is_coordinator else self.soco.group.coordinator
