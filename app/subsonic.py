@@ -1,5 +1,6 @@
 import os
 import logging
+import random
 
 from itertools import chain
 from asyncio import gather, Semaphore
@@ -10,9 +11,11 @@ from libopensonic.errors import DataNotFoundError
 from .models import (
     SearchRequest,
     SearchRequestKind,
+    SearchRequestOrder,
     AlbumInfo,
     SongInfo,
     PlaylistInfo,
+    Sortable,
 )
 
 logger = logging.getLogger(__name__)
@@ -20,6 +23,16 @@ logger = logging.getLogger(__name__)
 CONCURRENCY_LIMIT = 8
 SEARCH_LIMIT = 1000
 ALBUMS_LIMIT = 500
+
+def _sort_results(req: SearchRequest, items: list[Sortable]) -> list[Sortable]:
+    match req.order_by:
+        case SearchRequestOrder.RANDOM:
+            return random.sample(items, req.limit or len(items))
+        case SearchRequestOrder.NATURAL:
+            items = sorted(items, key = lambda x: x.sort_key())
+    if req.limit and req.limit < len(items):
+        items = items[:req.limit]
+    return items
 
 async def _paginate(fetch_fn, extract_fn = lambda x: x, limit = SEARCH_LIMIT):
     offset = 0
@@ -51,6 +64,7 @@ def _to_song_info(it):
         album_id = it.parent,
         album = it.album,
         artist = it.artist,
+        album_artist = it.display_album_artist,
         content_type = it.content_type,
         duration = it.duration,
         year = it.year,
@@ -288,7 +302,7 @@ class SubsonicAPI:
         logger.warning('no searcher found for playlist query')
         return []
 
-    async def search(self, req: SearchRequest):
+    async def _search_unsorted(self, req: SearchRequest):
         match req.kind:
             case SearchRequestKind.SONG:
                 return await self._search_songs(req)
@@ -299,6 +313,9 @@ class SubsonicAPI:
 
         logger.warning('unknown search kind')
         return []
+
+    async def search(self, req: SearchRequest):
+        return _sort_results(req, await self._search_unsorted(req))
 
     async def resolve_songs(self, req: SearchRequest) -> list[SongInfo]:
         results = await self.search(req)

@@ -34,13 +34,16 @@ class SearchRequestKind(str, Enum):
     ALBUM = 'album'
     PLAYLIST = 'playlist'
 
+class SearchRequestOrder(str, Enum):
+    NONE = 'none'
+    NATURAL = 'natural'
+    RANDOM = 'random'
+
 class PlayRequestMode(str, Enum):
-    NORMAL = 'NORMAL'
-    REPEAT_ONE = 'REPEAT_ONE'
-    REPEAT_ALL = 'REPEAT_ALL'
-    SHUFFLE = 'SHUFFLE'
-    SHUFFLE_REPEAT_ONE = 'SHUFFLE_REPEAT_ONE'
-    SHUFFLE_NOREPEAT = 'SHUFFLE_NOREPEAT'
+    NORMAL = 'normal'
+    NORMAL_REPEAT = 'normal_repeat'
+    SHUFFLE = 'shuffle'
+    SHUFFLE_REPEAT = 'shuffle_repeat'
 
 class SearchRequest(BaseModel):
     query: str | None = None
@@ -53,6 +56,8 @@ class SearchRequest(BaseModel):
     playlist: str | None = None
     playlist_id: str | None = None
     starred: bool | None = None
+    limit: int | None = None
+    order_by: SearchRequestOrder = SearchRequestOrder.NONE
     kind: SearchRequestKind = SearchRequestKind.ALBUM
 
     def build_query(self) -> str:
@@ -81,11 +86,15 @@ class SearchRequest(BaseModel):
 class PlayRequest(SearchRequest):
     mode: PlayRequestMode = PlayRequestMode.NORMAL
 
+class Sortable():
+    def sort_key(self):
+        return ()
+
 class Matchable():
-    def matches(req: SearchRequest) -> bool:
+    def matches(self, req: SearchRequest) -> bool:
         return True
 
-class AlbumInfo(BaseModel, Matchable):
+class AlbumInfo(BaseModel, Matchable, Sortable):
     album_id: str
     album: str
     artist: str
@@ -93,6 +102,14 @@ class AlbumInfo(BaseModel, Matchable):
     year: int | None
     cover_art: str | None
     starred: str | None
+
+    def sort_key(self):
+        return (
+            self.artist,
+            self.year,
+            self.album,
+            self.album_id,
+        )
 
     def search_string(self) -> str:
         return _build_query(
@@ -113,10 +130,23 @@ class AlbumInfo(BaseModel, Matchable):
 
 class SongInfo(AlbumInfo):
     song_id: str
+    album_artist: str
     content_type: str
     duration: int
     title: str
     track: int | None
+
+    def sort_key(self):
+        return (
+            self.album_artist,
+            self.year,
+            self.album,
+            self.album_id,
+            self.track or 0,
+            self.artist,
+            self.title,
+            self.song_id,
+        )
 
     def search_string(self) -> str:
         return _build_query(
@@ -130,9 +160,15 @@ class SongInfo(AlbumInfo):
             _match_eq(req.title, self.title)
         )
 
-class PlaylistInfo(BaseModel, Matchable):
+class PlaylistInfo(BaseModel, Matchable, Sortable):
     playlist_id: str
     playlist: str
+
+    def sort_key(self):
+        return (
+            self.playlist,
+            self.playlist_id,
+        )
 
     def search_string(self) -> str:
         return _build_query(

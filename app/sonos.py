@@ -13,6 +13,14 @@ logger = logging.getLogger(__name__)
 # determines how many songs we queue before sending the "play queue" request
 FIRST_BATCH_SIZE = 16
 
+# map our API modes to sonos values
+SONOS_PLAY_MODES = {
+    PlayRequestMode.SHUFFLE: 'SHUFFLE_NOREPEAT',
+    PlayRequestMode.SHUFFLE_REPEAT: 'SHUFFLE',
+    PlayRequestMode.NORMAL: 'NORMAL',
+    PlayRequestMode.NORMAL_REPEAT: 'REPEAT_ALL',
+}
+
 def _format_duration(seconds: int) -> str:
     h, remainder = divmod(seconds, 3600)
     m, s = divmod(remainder, 60)
@@ -61,7 +69,7 @@ class SonosDevice:
             coordinator = self.soco if self.soco.is_coordinator else self.soco.group.coordinator
 
             coordinator.clear_queue()
-            coordinator.play_mode = mode.value
+            coordinator.play_mode = SONOS_PLAY_MODES.get(mode, 'NORMAL')
 
             head = results[:FIRST_BATCH_SIZE]
             tail = results[FIRST_BATCH_SIZE:]
