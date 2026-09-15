@@ -1,6 +1,5 @@
 import os
 import logging
-import random
 
 from itertools import chain
 from asyncio import gather, Semaphore
@@ -24,16 +23,6 @@ CONCURRENCY_LIMIT = 8
 SEARCH_LIMIT = 1000
 ALBUMS_LIMIT = 500
 
-def _sort_results(req: SearchRequest, items: list[Sortable]) -> list[Sortable]:
-    match req.order_by:
-        case SearchRequestOrder.RANDOM:
-            return random.sample(items, req.limit or len(items))
-        case SearchRequestOrder.NATURAL:
-            items = sorted(items, key = lambda x: x.sort_key())
-    if req.limit and req.limit < len(items):
-        items = items[:req.limit]
-    return items
-
 async def _paginate(fetch_fn, extract_fn = lambda x: x, limit = SEARCH_LIMIT):
     offset = 0
 
@@ -52,6 +41,7 @@ def _to_album_info(it):
     return AlbumInfo(
         album_id = it.id,
         album = it.name,
+        artist_id = it.artist_id,
         artist = it.artist,
         year = it.year,
         genres = [ genre.name for genre in it.genres ],
@@ -63,6 +53,7 @@ def _to_song_info(it):
     return SongInfo(
         album_id = it.parent,
         album = it.album,
+        artist_id = it.artist_id,
         artist = it.artist,
         album_artist = it.display_album_artist,
         content_type = it.content_type,
@@ -315,20 +306,16 @@ class SubsonicAPI:
         return []
 
     async def search(self, req: SearchRequest):
-        return _sort_results(req, await self._search_unsorted(req))
+        return req.sort_results(await self._search_unsorted(req))
 
     async def resolve_songs(self, req: SearchRequest) -> list[SongInfo]:
-        results = await self.search(req)
+        results = await self._search_unsorted(req)
         match req.kind:
-            case SearchRequestKind.SONG:
-                return results
             case SearchRequestKind.ALBUM:
-                return await self._get_albums(results)
+                results = await self._get_albums(results)
             case SearchRequestKind.PLAYLIST:
-                return await self._get_playlists(results)
-
-        logger.warning('unknown search kind')
-        return []
+                results = await self._get_playlists(results)
+        return req.sort_results(results)
 
     def get_stream_url(self, id):
         return self.conn.get_stream_url(id)

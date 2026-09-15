@@ -1,6 +1,13 @@
 import re
+
+from collections import defaultdict
+from random import sample
+from itertools import islice
 from enum import Enum
+
 from pydantic import BaseModel
+
+from .shuffle import constrained_shuffle
 
 def _tokenize(a: str) -> list[str]:
     return re.findall(r"\w+", (a or "").casefold(), flags=re.UNICODE)
@@ -38,12 +45,19 @@ class SearchRequestOrder(str, Enum):
     NONE = 'none'
     NATURAL = 'natural'
     RANDOM = 'random'
+    SMART = 'smart'
 
 class PlayRequestMode(str, Enum):
     NORMAL = 'normal'
     NORMAL_REPEAT = 'normal_repeat'
     SHUFFLE = 'shuffle'
     SHUFFLE_REPEAT = 'shuffle_repeat'
+
+class Sortable():
+    def constraint_key(self):
+        return ()
+    def sort_key(self):
+        return ()
 
 class SearchRequest(BaseModel):
     query: str | None = None
@@ -83,12 +97,24 @@ class SearchRequest(BaseModel):
                 ]
         return _build_query(*search_fields)
 
+    def sort_results(self, items: list[Sortable]) -> list[Sortable]:
+        limit = self.limit or len(items)
+
+        match self.order_by:
+            case SearchRequestOrder.RANDOM:
+                return sample(items, limit)
+            case SearchRequestOrder.SMART:
+                return list(islice(constrained_shuffle(items, lambda x: x.constraint_key()), limit))
+            case SearchRequestOrder.NATURAL:
+                items = sorted(items, key = lambda x: x.sort_key())
+
+        if limit < len(items):
+            items = items[:limit]
+
+        return items
+
 class PlayRequest(SearchRequest):
     mode: PlayRequestMode = PlayRequestMode.NORMAL
-
-class Sortable():
-    def sort_key(self):
-        return ()
 
 class Matchable():
     def matches(self, req: SearchRequest) -> bool:
@@ -97,11 +123,17 @@ class Matchable():
 class AlbumInfo(BaseModel, Matchable, Sortable):
     album_id: str
     album: str
+    artist_id: str
     artist: str
     genres: list[str]
     year: int | None
     cover_art: str | None
     starred: str | None
+
+    def constraint_key(self):
+        return (
+            self.artist_id,
+        )
 
     def sort_key(self):
         return (
