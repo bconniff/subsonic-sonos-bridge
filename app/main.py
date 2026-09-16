@@ -12,7 +12,7 @@ from .context import (
     lifespan
 )
 
-from .models import PlayRequest, SearchRequest
+from .model.request import PlayRequest, SearchRequest
 from .sonos import SonosConnection
 
 logging.basicConfig(level=logging.INFO)

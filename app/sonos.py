@@ -6,7 +6,8 @@ import time
 from soco import SoCo, discovery
 from soco.data_structures import DidlMusicTrack, DidlResource, to_didl_string
 
-from .models import PlayRequestMode, SongInfo
+from .model.request import PlayRequestMode
+from .model.data import SongData
 
 logger = logging.getLogger(__name__)
 
@@ -41,7 +42,7 @@ class SonosDevice:
         self.name = self.soco.player_name
         self.ip = self.soco.ip_address
 
-    def _to_track_didls(self, songs: list[SongInfo]):
+    def _to_track_didls(self, songs: list[SongData]):
         return [
             DidlMusicTrack(
                 title = song.title,
