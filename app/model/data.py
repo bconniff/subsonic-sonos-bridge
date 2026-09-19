@@ -4,6 +4,8 @@ from .request import SearchRequest
 from .matcher import match_eq, match_in, match_exact, match_fuzzy, build_query
 
 class BaseDataModel(BaseModel):
+    partition: int | None = None
+
     def matches(self, req: SearchRequest) -> bool:
         return True
 
@@ -42,7 +44,6 @@ class SongData(AlbumData):
     title: str
     track: int | None
     disc: int | None
-    partition: int | None = None
 
     def _search_string(self) -> str:
         return build_query(

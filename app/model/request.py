@@ -27,7 +27,7 @@ class SearchRequest(BaseModel):
     playlist: str | None = None
     playlist_id: str | None = None
     starred: bool | None = None
-    kind: SearchRequestKind = SearchRequestKind.ALBUM
+    kind: SearchRequestKind = SearchRequestKind.SONG
     ops: list[Operation] = []
 
     def build_query(self) -> str:
