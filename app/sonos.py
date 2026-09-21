@@ -30,6 +30,7 @@ def _format_duration(seconds: int) -> str:
 class SonosDevice:
     def __init__(self, name):
         self.bridge_url = os.environ.get("BRIDGE_URL", "http://localhost:8000")
+        self.force_content_type = os.environ.get("FORCE_CONTENT_TYPE", None)
 
         if re.fullmatch(r"\d+\.\d+\.\d+\.\d+", name):
             self.soco = SoCo(name)
@@ -41,6 +42,10 @@ class SonosDevice:
 
         self.name = self.soco.player_name
         self.ip = self.soco.ip_address
+
+    def _content_type(self, song: SongData):
+        content_type = self.force_content_type or song.content_type
+        return f"http-get:*:{content_type}:*"
 
     def _to_track_didls(self, songs: list[SongData]):
         return [
@@ -55,7 +60,7 @@ class SonosDevice:
                 resources = [
                     DidlResource(
                         uri = f"{self.bridge_url}/stream/{song.song_id}",
-                        protocol_info = f"http-get:*:{song.content_type}:*",
+                        protocol_info = self._content_type(song),
                         duration = _format_duration(song.duration),
                     )
                 ],

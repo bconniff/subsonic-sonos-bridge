@@ -78,6 +78,7 @@ class SubsonicAPI:
             username = os.environ.get('SUBSONIC_USERNAME'),
             password = os.environ.get('SUBSONIC_PASSWORD'),
             port = os.environ.get('SUBSONIC_PORT', 443),
+            app_name = os.environ.get('SUBSONIC_APP_NAME', 'subsonic-sonos-bridge'),
         )
         self.semaphore = Semaphore(CONCURRENCY_LIMIT)
 

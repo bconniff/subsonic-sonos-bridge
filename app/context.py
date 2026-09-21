@@ -14,6 +14,7 @@ async def lifespan(app: FastAPI):
     app.state.subsonic_api = SubsonicAPI()
     app.state.http_session = ClientSession()
     app.state.sonos_connection = SonosConnection()
+
     yield
     await gather(
         app.state.subsonic_api.close(),

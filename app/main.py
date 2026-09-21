@@ -64,7 +64,7 @@ def health():
 async def search(req: SearchRequest, subsonic: DependSubsonicAPI):
     return await subsonic.search(req)
 
-@app.get("/stream/{id}")
+@app.api_route("/stream/{id}", methods=['GET','HEAD'])
 async def get_song_stream(id: str, req: Request, subsonic: DependSubsonicAPI, http: DependHttpSession):
     url, params = subsonic.get_stream_url(id)
 
@@ -74,7 +74,7 @@ async def get_song_stream(id: str, req: Request, subsonic: DependSubsonicAPI, ht
         headers = _proxy_headers(req.headers, PROXY_REQUEST_HEADERS)
     ))
 
-@app.get("/art/{id}")
+@app.api_route("/art/{id}", methods=['GET','HEAD'])
 async def get_art(id: str, subsonic: DependSubsonicAPI):
     return _stream_response(await subsonic.get_art(id))
 
