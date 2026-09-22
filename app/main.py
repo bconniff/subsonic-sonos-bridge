@@ -37,6 +37,8 @@ PROXY_RESPONSE_HEADERS = {
     "expires",
 }
 
+STREAM_CHUNK_SIZE = 65536
+
 def _proxy_headers(headers, keep_headers=PROXY_RESPONSE_HEADERS):
     return {
         k: v for k, v in headers.items()
@@ -45,7 +47,7 @@ def _proxy_headers(headers, keep_headers=PROXY_RESPONSE_HEADERS):
 
 def _stream_response(res: ClientResponse) -> StreamingResponse:
     async def body():
-        async for chunk in res.content:
+        async for chunk in res.content.iter_chunked(STREAM_CHUNK_SIZE):
             yield chunk
         await res.release()
 
