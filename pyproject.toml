@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "subsonic-sonos-bridge"
-version = "0.1.0"
+version = "1.0.2"
 description = "Bridge between Subsonic API and Sonos"
 requires-python = ">=3.10"
 dependencies = [

@@ -1,7 +1,7 @@
 import logging
 
 from starlette.concurrency import run_in_threadpool
-from aiohttp import ClientResponse
+from aiohttp import ClientResponse, ClientTimeout
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import StreamingResponse
 
@@ -39,6 +39,12 @@ PROXY_RESPONSE_HEADERS = {
 
 STREAM_CHUNK_SIZE = 65536
 
+STREAM_TIMEOUT = ClientTimeout(
+    total = None,
+    sock_connect = 10,
+    sock_read = 30,
+)
+
 def _proxy_headers(headers, keep_headers=PROXY_RESPONSE_HEADERS):
     return {
         k: v for k, v in headers.items()
@@ -73,7 +79,8 @@ async def get_song_stream(id: str, req: Request, subsonic: DependSubsonicAPI, ht
     return _stream_response(await http.get(
         url,
         params = params,
-        headers = _proxy_headers(req.headers, PROXY_REQUEST_HEADERS)
+        headers = _proxy_headers(req.headers, PROXY_REQUEST_HEADERS),
+        timeout = STREAM_TIMEOUT,
     ))
 
 @app.api_route("/art/{id}", methods=['GET','HEAD'])
