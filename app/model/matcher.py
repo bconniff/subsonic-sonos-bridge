@@ -10,7 +10,7 @@ def match_eq(a: str, b: str) -> bool:
     return a is None or a.casefold() == (b or "").casefold()
 
 def match_in(a: str, b: list[str]) -> bool:
-    return any(match_eq(a, x) for x in (b or []))
+    return a is None or any(match_eq(a, x) for x in (b or []))
 
 def match_fuzzy(a: str, b: str) -> bool:
     search_tokens = _tokenize(a)
