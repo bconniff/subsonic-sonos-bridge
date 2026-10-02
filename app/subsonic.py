@@ -316,7 +316,11 @@ class SubsonicAPI:
         return self.conn.get_stream_url(id)
 
     async def get_art(self, id):
-        return await self.conn.get_cover_art(id)
+        try:
+            return await self.conn.get_cover_art(id)
+        except DataNotFoundError:
+            pass
+        return None
 
     async def close(self):
         await self.conn.cleanup()

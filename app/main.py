@@ -3,7 +3,7 @@ import logging
 from starlette.concurrency import run_in_threadpool
 from aiohttp import ClientResponse, ClientTimeout
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, JSONResponse
 
 from .context import (
     DependSubsonicAPI,
@@ -45,6 +45,11 @@ STREAM_TIMEOUT = ClientTimeout(
     sock_read = 30,
 )
 
+class AppException(HTTPException):
+    def __init__(self, status_code: int, detail: str, data = None):
+        super().__init__(status_code=status_code, detail=detail)
+        self.data = data
+
 def _proxy_headers(headers, keep_headers=PROXY_RESPONSE_HEADERS):
     return {
         k: v for k, v in headers.items()
@@ -64,6 +69,21 @@ def _stream_response(res: ClientResponse) -> StreamingResponse:
         headers = _proxy_headers(res.headers),
     )
 
+@app.exception_handler(AppException)
+async def app_exception_handler(request, exc: AppException):
+    return JSONResponse(
+        status_code=exc.status_code,
+        content = {
+            key: value
+            for key,value in {
+                "detail": exc.detail,
+                "data": exc.data,
+            }.items()
+            if value is not None
+        },
+        headers = exc.headers,
+    )
+
 @app.get("/health")
 def health():
     return {"status": "ok"}
@@ -76,29 +96,38 @@ async def search(req: SearchRequest, subsonic: DependSubsonicAPI):
 async def get_song_stream(id: str, req: Request, subsonic: DependSubsonicAPI, http: DependHttpSession):
     url, params = subsonic.get_stream_url(id)
 
-    return _stream_response(await http.get(
+    stream_res = await http.get(
         url,
         params = params,
         headers = _proxy_headers(req.headers, PROXY_REQUEST_HEADERS),
         timeout = STREAM_TIMEOUT,
-    ))
+    )
+
+    if stream_res.headers.get('content-type') == 'application/json':
+        json = await stream_res.json()
+        raise AppException(404, 'Stream not found', json)
+
+    return _stream_response(stream_res)
 
 @app.api_route("/art/{id}", methods=['GET','HEAD'])
 async def get_art(id: str, subsonic: DependSubsonicAPI):
-    return _stream_response(await subsonic.get_art(id))
+    art_res = await subsonic.get_art(id)
+    if not art_res:
+        raise AppException(404, 'Art not found')
+    return _stream_response(art_res)
 
 @app.get("/sonos/{sonos_name}")
 async def get_sonos_info(sonos_name: str, sonos: DependSonosConnection):
     device = await run_in_threadpool(sonos.get_device, sonos_name)
     if not device:
-        raise HTTPException(status_code = 404, detail = 'Device not found')
+        raise AppException(404, 'Device not found')
     return await run_in_threadpool(device.get_info)
 
 @app.get("/sonos/{sonos_name}/queue")
 async def get_sonos_queue(sonos_name: str, sonos: DependSonosConnection):
     device = await run_in_threadpool(sonos.get_device, sonos_name)
     if not device:
-        raise HTTPException(status_code = 404, detail = 'Device not found')
+        raise AppException(404, 'Device not found')
     return await run_in_threadpool(device.get_queue)
 
 @app.post("/sonos/{sonos_name}/play")
@@ -108,8 +137,8 @@ async def play(sonos_name: str, req: PlayRequest, subsonic: DependSubsonicAPI, s
     songs = await songs_async
 
     if not device:
-        raise HTTPException(status_code = 404, detail = 'Device not found')
+        raise AppException(404, 'Device not found')
     if not songs:
-        raise HTTPException(status_code = 404, detail = 'Songs not found')
+        raise AppException(404, 'Songs not found')
 
     return await run_in_threadpool(device.play_songs, songs, req.mode)

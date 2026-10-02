@@ -14,6 +14,9 @@ logger = logging.getLogger(__name__)
 # determines how many songs we queue before sending the "play queue" request
 FIRST_BATCH_SIZE = 16
 
+# how many items to retrieve at while paging the queue
+QUEUE_LIMIT = 100
+
 # map our API modes to sonos values
 SONOS_PLAY_MODES = {
     PlayRequestMode.SHUFFLE: 'SHUFFLE_NOREPEAT',
@@ -26,6 +29,9 @@ def _format_duration(seconds: int) -> str:
     h, remainder = divmod(seconds, 3600)
     m, s = divmod(remainder, 60)
     return f"{h}:{m:02d}:{s:02d}"
+
+def _coordinator(soco):
+    return soco if soco.is_coordinator else soco.group.coordinator
 
 class SonosDevice:
     def __init__(self, name):
@@ -55,7 +61,7 @@ class SonosDevice:
                 item_id = song.song_id,
                 creator = song.artist or "",
                 album = song.album or "",
-                album_art_uri = f"{self.bridge_url}/art/{song.cover_art}",
+                album_art_uri = f"{self.bridge_url}/art/{song.cover_art}" if song.cover_art else None,
                 original_track_number = song.track,
                 resources = [
                     DidlResource(
@@ -72,7 +78,7 @@ class SonosDevice:
         results = self._to_track_didls(songs)
 
         if songs:
-            coordinator = self.soco if self.soco.is_coordinator else self.soco.group.coordinator
+            coordinator = _coordinator(self.soco)
 
             coordinator.clear_queue()
             coordinator.play_mode = SONOS_PLAY_MODES.get(mode, 'NORMAL')
@@ -88,10 +94,18 @@ class SonosDevice:
         return results
 
     def get_queue(self):
-        return self.soco.get_queue()
+        coordinator = _coordinator(self.soco)
+        result = []
+
+        while items := coordinator.get_queue(len(result), QUEUE_LIMIT):
+            result.extend(items)
+            if len(items) < QUEUE_LIMIT:
+                break
+
+        return result
 
     def get_info(self):
-        coordinator = self.soco if self.soco.is_coordinator else self.soco.group.coordinator
+        coordinator = _coordinator(self.soco)
         return {
             'ip': self.ip,
             'name': self.name,
