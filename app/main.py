@@ -1,19 +1,17 @@
 import logging
 
 from starlette.concurrency import run_in_threadpool
-from aiohttp import ClientResponse, ClientTimeout
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import StreamingResponse, JSONResponse
+from fastapi.responses import JSONResponse
 
 from .context import (
     DependSubsonicAPI,
-    DependHttpSession,
+    DependStreamer,
     DependSonosConnection,
     lifespan
 )
 
 from .model.request import PlayRequest, SearchRequest
-from .sonos import SonosConnection
 
 logging.basicConfig(level=logging.INFO)
 
@@ -21,53 +19,10 @@ logger = logging.getLogger(__name__)
 
 app = FastAPI(title="subsonic-sonos-bridge", lifespan=lifespan)
 
-PROXY_REQUEST_HEADERS = {
-    "range",
-    "if-none-match",
-    "if-modified-since",
-}
-
-PROXY_RESPONSE_HEADERS = {
-    "content-range",
-    "content-length",
-    "accept-ranges",
-    "cache-control",
-    "etag",
-    "last-modified",
-    "expires",
-}
-
-STREAM_CHUNK_SIZE = 65536
-
-STREAM_TIMEOUT = ClientTimeout(
-    total = None,
-    sock_connect = 10,
-    sock_read = 30,
-)
-
 class AppException(HTTPException):
     def __init__(self, status_code: int, detail: str, data = None):
         super().__init__(status_code=status_code, detail=detail)
         self.data = data
-
-def _proxy_headers(headers, keep_headers=PROXY_RESPONSE_HEADERS):
-    return {
-        k: v for k, v in headers.items()
-        if k.lower() in keep_headers
-    }
-
-def _stream_response(res: ClientResponse) -> StreamingResponse:
-    async def body():
-        async for chunk in res.content.iter_chunked(STREAM_CHUNK_SIZE):
-            yield chunk
-        await res.release()
-
-    return StreamingResponse(
-        body(),
-        status_code = res.status,
-        media_type = res.headers.get("content-type"),
-        headers = _proxy_headers(res.headers),
-    )
 
 @app.exception_handler(AppException)
 async def app_exception_handler(request, exc: AppException):
@@ -93,28 +48,22 @@ async def search(req: SearchRequest, subsonic: DependSubsonicAPI):
     return await subsonic.search(req)
 
 @app.api_route("/stream/{id}", methods=['GET','HEAD'])
-async def get_song_stream(id: str, req: Request, subsonic: DependSubsonicAPI, http: DependHttpSession):
+async def get_song_stream(id: str, req: Request, subsonic: DependSubsonicAPI, streamer: DependStreamer):
     url, params = subsonic.get_stream_url(id)
-
-    stream_res = await http.get(
-        url,
-        params = params,
-        headers = _proxy_headers(req.headers, PROXY_REQUEST_HEADERS),
-        timeout = STREAM_TIMEOUT,
-    )
+    stream_res = await streamer.fetch(req, url, params)
 
     if stream_res.headers.get('content-type') == 'application/json':
         json = await stream_res.json()
         raise AppException(404, 'Stream not found', json)
 
-    return _stream_response(stream_res)
+    return streamer.respond(stream_res)
 
 @app.api_route("/art/{id}", methods=['GET','HEAD'])
-async def get_art(id: str, subsonic: DependSubsonicAPI):
+async def get_art(id: str, subsonic: DependSubsonicAPI, streamer: DependStreamer):
     art_res = await subsonic.get_art(id)
     if not art_res:
         raise AppException(404, 'Art not found')
-    return _stream_response(art_res)
+    return streamer.respond(art_res)
 
 @app.get("/sonos/{sonos_name}")
 async def get_sonos_info(sonos_name: str, sonos: DependSonosConnection):
